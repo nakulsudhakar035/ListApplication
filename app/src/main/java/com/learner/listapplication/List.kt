@@ -1,7 +1,11 @@
 package com.learner.listapplication
 
+import android.Manifest
+import android.content.Context
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +23,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedButton
@@ -38,14 +43,25 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
+import androidx.navigation.NavController
+import androidx.navigation.NavHostController
 
 data class Item(val id: Int,
                 var name: String,
                 var quantity: Int,
-                var isBeingEdited: Boolean)
+                var isBeingEdited: Boolean = false,
+                var address: String = ""
+    )
 
 @Composable
-fun ListApp(){
+fun ListApp(
+    locationUtils: LocationUtils,
+    viewModel: LocationViewModel,
+    navController: NavHostController,
+    context: Context,
+    address: String
+    ){
     var showDialog by remember {
         mutableStateOf(false)
     }
@@ -58,6 +74,37 @@ fun ListApp(){
     var items by remember {
         mutableStateOf(listOf<Item>())
     }
+
+    val requestPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions() ,
+        onResult = { permissions ->
+            if(permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+                && permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true){
+                // I HAVE ACCESS to location
+
+                locationUtils.requestLocationUpdates(viewModel = viewModel)
+            }else{
+                val rationaleRequired = ActivityCompat.shouldShowRequestPermissionRationale(
+                    context as MainActivity,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) || ActivityCompat.shouldShowRequestPermissionRationale(
+                    context as MainActivity,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+
+                if(rationaleRequired){
+                    Toast.makeText(context,
+                        "Location Permission is required for this feature to work", Toast.LENGTH_LONG)
+                        .show()
+                }else{
+                    Toast.makeText(context,
+                        "Location Permission is required. Please enable it in the Android Settings",
+                        Toast.LENGTH_LONG)
+                        .show()
+                }
+            }
+        }
+    )
     Column(Modifier.fillMaxSize()){
         ElevatedButton(
             onClick = { showDialog = true },
@@ -80,6 +127,7 @@ fun ListApp(){
                             editedItem?.let {
                                 it.name = editedName
                                 it.quantity = editedQuanity
+                                it.address = address
                             }
                         })
                 } else {
@@ -104,7 +152,13 @@ fun ListApp(){
             },
             confirmButton = {
                 Button(onClick = {
-                    items = items + Item(items.size+1,itemName,itemQuantity.toInt(), false);
+                    items = items + Item(
+                        items.size+1,
+                        itemName,
+                        itemQuantity.toInt(),
+                        false,
+                        address = address
+                    );
                     showDialog = false
                     itemName = ""
                     itemQuantity = "1"
@@ -134,8 +188,28 @@ fun ListApp(){
                         singleLine = true,
                         label = { Text("Item Quantity") }
                     )
+                    
+                    Button(
+                        onClick = {
+                            if (locationUtils.hasLocationPermission(context)){
+                                locationUtils.requestLocationUpdates(viewModel)
+                                navController.navigate("locationScreen"){
+                                    this.launchSingleTop
+                                }
+                            } else {
+                                requestPermissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                )
+                            }
+                        }) {
+                          Text(text = "address")  
+                    }
                 }
-            })
+            }
+        )
     }
 }
 
@@ -154,25 +228,36 @@ fun ListItem(
             ),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column (){
-            Text(text = item.name, modifier = Modifier
-                .padding(8.dp)
-                .padding(start = 16.dp))
-            Text(text = "Qty : ${item.quantity}", modifier = Modifier
-                .padding(8.dp)
-                .padding(start = 16.dp))
+        Column (modifier = Modifier.weight(1f).padding(8.dp)){
+            Row {
+                Text(text = item.name, modifier = Modifier
+                    .padding(8.dp)
+                    .padding(start = 16.dp))
+                Text(text = "Qty : ${item.quantity}", modifier = Modifier
+                    .padding(8.dp)
+                    .padding(start = 16.dp))
+            }
+            Row (modifier = Modifier.fillMaxWidth()){
+                Icon(imageVector = Icons.Default.LocationOn, contentDescription = "Location relevant to item")
+                Text(text = item.address)
+            }
         }
 
-        Spacer(modifier = Modifier.weight(1f))
-        IconButton(onClick = onEditClicked, modifier = Modifier
-            .align(Alignment.CenterVertically)
-            .padding(end = 16.dp)) {
-            Icon(imageVector = Icons.Default.Edit, contentDescription = "To edit the item")
-        }
-        IconButton(onClick = onDeleteClicked, modifier = Modifier
-            .align(Alignment.CenterVertically)
-            .padding(end = 16.dp)) {
-            Icon(imageVector = Icons.Default.Delete, contentDescription = "To delete the item")
+        Row(modifier = Modifier.padding(8.dp)) {
+            IconButton(
+                onClick = onEditClicked, modifier = Modifier
+                    .align(Alignment.CenterVertically)
+                    .padding(end = 16.dp)
+            ) {
+                Icon(imageVector = Icons.Default.Edit, contentDescription = "To edit the item")
+            }
+            IconButton(
+                onClick = onDeleteClicked, modifier = Modifier
+                    .align(Alignment.CenterVertically)
+                    .padding(end = 16.dp)
+            ) {
+                Icon(imageVector = Icons.Default.Delete, contentDescription = "To delete the item")
+            }
         }
 
     }
@@ -222,7 +307,9 @@ fun ListItemEditing(item: Item, onEditComplete: (String, Int) -> Unit){
             isEditing = false
             onEditComplete(editedName, editedQuality.toIntOrNull() ?: 1)
         },
-            modifier = Modifier.align(Alignment.CenterVertically).padding(end = 16.dp)) {
+            modifier = Modifier
+                .align(Alignment.CenterVertically)
+                .padding(end = 16.dp)) {
             Text(text = "Save")
         }
 
