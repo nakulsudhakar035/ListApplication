@@ -1,13 +1,14 @@
 package com.learner.listapplication
 
+import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
-import android.widget.Toast
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.android.gms.maps.model.LatLng
 import kotlinx.coroutines.launch
+
 
 class LocationViewModel: ViewModel() {
     private val _location = mutableStateOf<LocationData?>(null)
@@ -20,19 +21,40 @@ class LocationViewModel: ViewModel() {
         _location.value = newLocation
     }
 
-    fun fetchAddress(latLng: String){
+    fun fetchAddress(latLng: String,
+                     context: Context){
         try{
             viewModelScope.launch {
-                var result = RetrofitClient
-                    .create()
-                    .getAddressFromCoordinates(
-                        latLng,
-                        "AIzaSyDYaEtgJncZkVrgbLEhRBLSSjpcxhO8YRE"
-                    )
-                _address.value = result.results
+                var result = getApiKey(context)?.let {
+                    RetrofitClient
+                        .create()
+                        .getAddressFromCoordinates(
+                            latLng,
+                            it
+                        )
+                }
+                if (result != null) {
+                    _address.value = result.results
+                }
             }
         } catch (ex: Exception){
             Log.d("res1", "${ex.cause} ${ex.message}")
         }
+    }
+
+    fun getApiKey(context: Context): String? {
+        try {
+            val applicationInfo = context.packageManager
+                .getApplicationInfo(context.packageName, PackageManager.GET_META_DATA)
+            val metaData = applicationInfo.metaData
+            if (metaData != null) {
+                return metaData.getString("com.google.android.geo.API_KEY")
+            }
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.e("getApiKey", "Failed to load meta-data, NameNotFound: " + e.message)
+        } catch (e: NullPointerException) {
+            Log.e("getApiKey", "Failed to load meta-data, NullPointer: " + e.message)
+        }
+        return null
     }
 }
